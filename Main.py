@@ -251,82 +251,62 @@ def prepare_training_data(graphs, critical_nodes_list):
 
 # Main function
 def main():
-    train_graph_paths = ["datasetfinal1train.txt"]
-    critical_nodes_paths = ["criticalfinal1train.txt"]
-    test_graph_path = "datasetfinal1test.txt"
-    test_critical_nodes_path = "criticalfinal1test.txt"
+    graph_path = "datasetfinal1train.txt"
+    critical_path = "criticalfinal1train.txt"
 
-    train_graphs = [load_graph(path) for path in train_graph_paths]
-    critical_nodes_list = [load_critical_nodes(path) for path in critical_nodes_paths]
-    test_graph = load_graph(test_graph_path)
-    test_critical_nodes = load_critical_nodes(test_critical_nodes_path)
+    graph = load_graph(graph_path)
+    critical_nodes = load_critical_nodes(critical_path)
 
-    test_embeddings = generate_gcn_embeddings(test_graph)
-    print("First 5 Node Embeddings:\n", test_embeddings[:5])
-    print("Mean Embedding Value:", np.mean(test_embeddings))
-    print("Max Embedding Value:", np.max(test_embeddings))
-    print("Min Embedding Value:", np.min(test_embeddings))
-    test_labels = np.array([1 if str(node) in test_critical_nodes else 0 for node in test_graph.nodes()])
+    # 80/20 node split
+    nodes = list(graph.nodes())
+    np.random.shuffle(nodes)
+    split_idx = int(len(nodes) * 0.8)
+    train_nodes = set(nodes[:split_idx])
+    test_nodes = set(nodes[split_idx:])
+
+    # Create embeddings once
+    embeddings = generate_gcn_embeddings(graph)
+
+    # Prepare labels
+    labels = np.array([1 if str(node) in critical_nodes else 0 for node in graph.nodes()])
+    node_index = {node: i for i, node in enumerate(graph.nodes())}
+
+    train_idx = [node_index[n] for n in train_nodes]
+    test_idx  = [node_index[n] for n in test_nodes]
+
+    train_embeddings = embeddings[train_idx]
+    test_embeddings  = embeddings[test_idx]
+    train_labels = labels[train_idx]
+    test_labels  = labels[test_idx]
 
     model_filename = "ilgr_trained"
-    # train_embeddings, train_labels = prepare_training_data(train_graphs, critical_nodes_list)
 
-    # unique, counts = np.unique(train_labels, return_counts=True)
-    # print("Train Label Distribution:", dict(zip(unique, counts)))
-    # Load or train the ILGR model
+    # Train / Load model
     if os.path.exists(model_filename + ".keras"):
-        print("Loading pre-trained ILGR model...")
-        ilgr = ILGR(input_dim=test_embeddings.shape[1])
+        print("Loading existing model...")
+        ilgr = ILGR(input_dim=train_embeddings.shape[1])
         ilgr.load_model(model_filename)
     else:
         print("Training new ILGR model...")
-        train_embeddings, train_labels = prepare_training_data(train_graphs, critical_nodes_list)
         ilgr = ILGR(input_dim=train_embeddings.shape[1])
         ilgr.build_model()
         ilgr.train(train_embeddings, train_labels, epochs=1000)
         ilgr.save_model(model_filename)
 
-    # Predictions
     predicted_scores = ilgr.predict(test_embeddings)
-    # best_threshold = find_best_threshold(test_labels, predicted_scores)
 
-    # if best_threshold < 0.1:
-    #     best_threshold = 0.1
-    # best_threshold = np.percentile(predicted_scores, 95)  # Top 5% nodes
-    # predicted_labels = (predicted_scores >= best_threshold).astype(int)
-    top_k = max(1, int(len(predicted_scores) * 0.05))  # Ensure at least 1 node is selected
-    top_k_indices = np.argsort(predicted_scores)[-top_k:]  # Get indices of top scores
-
-    predicted_labels = np.zeros_like(predicted_scores, dtype=int)
-    predicted_labels[top_k_indices] = 1  # Assign top-k as critical nodes
-    print("First 20 predicted scores:", predicted_scores[:20])  # 🔍 Debug this
-    print("Max score:", np.max(predicted_scores))
-    print("Min score:", np.min(predicted_scores))
-    # top_k = int(len(predicted_scores) * 0.05)  # Top 5% nodes
-    # top_k_indices = np.argsort(predicted_scores)[-top_k:]  # Get indices of top scores
-
-    # # Create predicted labels: 1 for top 5%, 0 otherwise
-    # predicted_labels = np.zeros_like(predicted_scores, dtype=int)
-    # predicted_labels[top_k_indices] = 1
-# Calculate Accuracy
-    # precision, recall, f1, accuracy = computed_metrics()
-    threshold = np.percentile(predicted_scores, 95)  # Define threshold for classification
-    predicted_binary = (predicted_scores >= threshold).astype(int)  # Convert scores to binary labels
+    threshold = np.percentile(predicted_scores, 95)
+    predicted_binary = (predicted_scores >= threshold).astype(int)
 
     precision = precision_score(test_labels, predicted_binary)
     recall = recall_score(test_labels, predicted_binary)
     f1 = f1_score(test_labels, predicted_binary)
     accuracy = accuracy_score(test_labels, predicted_binary)
-    # accuracy = accuracy_score(test_labels, predicted_labels)
-    # # Performance metrics
-    # precision = precision_score(test_labels, predicted_labels)
-    # recall = recall_score(test_labels, predicted_labels)
-    # f1 = f1_score(test_labels, predicted_labels)
 
     print(f"\nPrecision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     print(f"F1-Score: {f1:.4f}")
-    print(f"\nAccuracy: {accuracy:.4f}")
+    print(f"Accuracy: {accuracy:.4f}")
     # Print unique predicted classes and their counts
     # y_pred = np.array(predicted_labels)
 
